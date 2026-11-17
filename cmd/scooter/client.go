@@ -22,9 +22,10 @@ var errAuthWall = errors.New("login required")
 type headerSource struct {
 	command  string
 	file     string
-	bearer   string // a token file, reread on reload since it may rotate
-	spec     string // a command printing a tunnelSpec; its headers
-	specFile string // a file holding a tunnelSpec, as Tramp writes before each connect
+	bearer   string                                                           // a token file, reread on reload since it may rotate
+	spec     string                                                           // a command printing a tunnelSpec; its headers
+	specFile string                                                           // a file holding a tunnelSpec, as Tramp writes before each connect
+	fn       func(ctx context.Context, retry bool) (map[string]string, error) // a stored login
 }
 
 // runJSONCommand runs a shell command and returns its JSON output.
@@ -70,6 +71,8 @@ func (h headerSource) load(ctx context.Context, retry bool) (map[string]string, 
 	var out []byte
 	var err error
 	switch {
+	case h.fn != nil:
+		return h.fn(ctx, retry)
 	case h.spec != "" || h.specFile != "":
 		s, err := h.loadSpec(ctx, retry)
 		if s.Headers == nil {

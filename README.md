@@ -16,6 +16,35 @@ each [GitHub release](https://github.com/chadac-me/scooter-cli/releases), with
 nix profile install github:chadac-me/scooter-cli
 ```
 
+## Commands for scripts and agents
+
+Each prints JSON and exits; flags may come anywhere.
+
+```sh
+scooter login --server home --url https://scooter.example.org --cookie   # paste _oauth2_proxy
+scooter login --server work --url https://scooter.work.example \
+  --issuer https://idp.work.example --client-id scooter                  # browser, OIDC + PKCE
+scooter servers                          # configured servers, and which are signed in
+scooter ls [--active] [--all]            # your conversations, newest first
+scooter new [--project] [--wait] "Fix the flaky login test"
+scooter send [--wait] ID "Also update the changelog"
+scooter wait ID [--timeout 10m]          # until the turn ends or needs you
+scooter show ID [--last 5]               # state, pending requests, recent messages
+scooter cancel ID | scooter suspend ID | scooter url ID
+```
+
+`wait` (and `--wait`) report `state`: `idle` when the turn ended, `needs_user`
+when the agent waits on an approval or question (listed in `pending`; answer
+it at `url`), `error` when the run failed, or `running` on timeout.
+`--project` asks the agent to clone the working directory's git remote and
+branch, so push your work first.
+
+Servers live in `~/.config/scooter/config.json` and logins in
+`credentials.json` next to it (mode 0600). `--server` takes a name or URL,
+then `$SCOOTER_SERVER`, then the default (the first server you log in to, or
+`login --default`). OIDC ID tokens refresh on their own; when a login can't
+be refreshed, commands exit 3 and ask you to run `scooter login` again.
+
 ## `scooter acp`
 
 `scooter acp --server https://scooter.example.org` is an

@@ -3,6 +3,7 @@
 //	scooter acp --server URL [flags]   ACP agent on stdio (agent-shell)
 //	scooter tunnel [flags]             a conversation's sshd on stdio (ssh ProxyCommand)
 //	scooter version                    print the release version
+//	scooter login|ls|new|send|wait|... one-shot commands for scripts and agents; print JSON
 package main
 
 import (
@@ -30,8 +31,14 @@ func main() {
 		tunnelMain(os.Args[2:])
 		return
 	}
+	if len(os.Args) >= 2 {
+		if cmd, ok := oneShots[os.Args[1]]; ok {
+			cmd.run(os.Args[2:])
+			return
+		}
+	}
 	if len(os.Args) < 2 || os.Args[1] != "acp" {
-		fmt.Fprintln(os.Stderr, "usage: scooter acp --server URL [--conversation ID] [--model M] [--project] [--headers-command CMD | --headers-file PATH]\n       scooter acp --self   (inside a Scooter sandbox: chat with its own conversation)")
+		fmt.Fprint(os.Stderr, "usage: scooter acp --server URL [--conversation ID] [--model M] [--project] [--headers-command CMD | --headers-file PATH]\n       scooter acp --self   (inside a Scooter sandbox: chat with its own conversation)\n       scooter tunnel ...   (an ssh ProxyCommand; see scooter tunnel -h)\n"+oneShotUsage())
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("acp", flag.ExitOnError)
