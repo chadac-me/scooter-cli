@@ -334,7 +334,7 @@ func openServer(flagValue string) *client {
 	if err != nil {
 		fatal(err)
 	}
-	return newClient(s.URL, loginHeaders(name, s))
+	return newClient(s.base(), loginHeaders(name, s))
 }
 
 // promptArg joins the arguments, or reads stdin for "-".

@@ -89,7 +89,7 @@ func TestCookieLoginStoresPrivately(t *testing.T) {
 	srv := scooterRequiring(t, "Cookie", "_oauth2_proxy=abc")
 	out, err := login(context.Background(), loginOptions{
 		name: "home", url: srv.URL + "/", auth: serverAuth{Kind: "cookie"},
-		cookieInput: strings.NewReader("_oauth2_proxy=abc\n"),
+		secretInput: strings.NewReader("_oauth2_proxy=abc\n"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -187,5 +187,58 @@ func TestResolveServer(t *testing.T) {
 	}
 	if _, _, err := cfg.resolve("nope"); err == nil {
 		t.Error("an unknown name resolved")
+	}
+}
+
+func TestAPIKeyLoginUsesTheAPIKeyEndpoint(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer sct_k" || r.Header.Get("Cookie") != "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"id":"chad"}`)
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := login(context.Background(), loginOptions{
+		name: "home", url: srv.URL, auth: serverAuth{Kind: "apikey"},
+		secretInput: strings.NewReader("sct_k\n"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := loadConfig()
+	_, s, _ := cfg.resolve("")
+	if err := newClient(s.base(), loginHeaders("home", s)).call(context.Background(), "GET", "/conversations", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{apiKeyPath + "/whoami", apiKeyPath + "/conversations"}
+	if fmt.Sprint(paths) != fmt.Sprint(want) {
+		t.Fatalf("paths %v, want %v", paths, want)
+	}
+}
+
+func TestAPIKeyLoginRefusesAnythingElse(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	_, err := login(context.Background(), loginOptions{
+		name: "home", url: "http://unused", auth: serverAuth{Kind: "apikey"},
+		secretInput: strings.NewReader("_oauth2_proxy=abc\n"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "sct_") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRefusedAPIKeyAsksForLogin(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	srv := scooterRequiring(t, "Authorization", "Bearer sct_new")
+	s := serverConfig{URL: srv.URL, Auth: serverAuth{Kind: "apikey"}}
+	if err := saveCredential("home", credential{APIKey: "sct_revoked"}); err != nil {
+		t.Fatal(err)
+	}
+	err := newClient(s.URL, loginHeaders("home", s)).call(context.Background(), "GET", "/whoami", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "scooter login --server home") {
+		t.Fatalf("got %v", err)
 	}
 }

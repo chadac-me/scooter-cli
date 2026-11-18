@@ -27,23 +27,25 @@ type loginOptions struct {
 	makeDefault  bool
 	noBrowser    bool
 	timeout      time.Duration
-	cookieInput  io.Reader
-	cookiePrompt bool
+	secretInput  io.Reader
+	secretPrompt bool
 }
 
 func loginMain(args []string) {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, `usage: scooter login [--server NAME] [--url URL --cookie | --url URL --issuer URL --client-id ID]
+		fmt.Fprintln(os.Stderr, `usage: scooter login [--server NAME] [--url URL --api-key | --url URL --cookie | --url URL --issuer URL --client-id ID]
 
 Signs in and stores the login under ~/.config/scooter. A new server needs
---url and an auth kind: --cookie pastes oauth2-proxy's _oauth2_proxy cookie
-(read from stdin when it isn't a terminal); --issuer and --client-id log in
-with OIDC (PKCE) in a browser.`)
+--url and an auth kind: --api-key pastes a key from Settings → API keys;
+--cookie pastes oauth2-proxy's _oauth2_proxy cookie (either is read from
+stdin when it isn't a terminal); --issuer and --client-id log in with OIDC
+(PKCE) in a browser.`)
 		fs.PrintDefaults()
 	}
 	server := fs.String("server", "", "server name (default: the default server)")
 	rawURL := fs.String("url", "", "server base URL, to add or change a server")
+	apiKey := fs.Bool("api-key", false, "sign in with a pasted API key")
 	cookie := fs.Bool("cookie", false, "sign in with a pasted _oauth2_proxy cookie")
 	issuer := fs.String("issuer", "", "OIDC issuer URL")
 	clientID := fs.String("client-id", "", "OIDC client id")
@@ -54,9 +56,11 @@ with OIDC (PKCE) in a browser.`)
 
 	opts := loginOptions{
 		name: *server, url: *rawURL, makeDefault: *makeDefault, noBrowser: *noBrowser,
-		timeout: 5 * time.Minute, cookieInput: os.Stdin, cookiePrompt: isTerminal(os.Stdin),
+		timeout: 5 * time.Minute, secretInput: os.Stdin, secretPrompt: isTerminal(os.Stdin),
 	}
 	switch {
+	case *apiKey:
+		opts.auth = serverAuth{Kind: "apikey"}
 	case *cookie:
 		opts.auth = serverAuth{Kind: "cookie"}
 	case *issuer != "" || *clientID != "":
@@ -94,15 +98,18 @@ func login(ctx context.Context, o loginOptions) (map[string]any, error) {
 	case s.URL == "":
 		return nil, fmt.Errorf("server %s is new: pass --url", name)
 	case s.Auth.Kind == "":
-		return nil, fmt.Errorf("server %s: pass --cookie, or --issuer and --client-id", name)
+		return nil, fmt.Errorf("server %s: pass --api-key, --cookie, or --issuer and --client-id", name)
 	case s.Auth.Kind == "oidc" && (s.Auth.Issuer == "" || s.Auth.ClientID == ""):
 		return nil, errors.New("OIDC needs both --issuer and --client-id")
 	}
 
 	var cred credential
-	if s.Auth.Kind == "cookie" {
+	switch s.Auth.Kind {
+	case "apikey":
+		cred, err = readAPIKey(o, s.URL)
+	case "cookie":
 		cred, err = readCookie(o, s.URL)
-	} else {
+	default:
 		cred, err = oidcLogin(ctx, s.Auth, o)
 	}
 	if err != nil {
@@ -123,27 +130,41 @@ func login(ctx context.Context, o loginOptions) (map[string]any, error) {
 		return nil, err
 	}
 	var who json.RawMessage
-	if err := newClient(s.URL, loginHeaders(name, s)).call(ctx, "GET", "/whoami", nil, &who); err != nil {
+	if err := newClient(s.base(), loginHeaders(name, s)).call(ctx, "GET", "/whoami", nil, &who); err != nil {
 		return nil, fmt.Errorf("signed in, but the server refused the login: %w", err)
 	}
 	return map[string]any{"server": name, "url": s.URL, "user": who}, nil
 }
 
 func readCookie(o loginOptions, base string) (credential, error) {
-	if o.cookiePrompt {
-		fmt.Fprintf(os.Stderr, "Sign in at %s/oauth2/sign_in, then copy the _oauth2_proxy cookie from the browser.\nCookie value: ", base)
+	v, err := readSecret(o, fmt.Sprintf("Sign in at %s/oauth2/sign_in, then copy the _oauth2_proxy cookie from the browser.\nCookie value: ", base))
+	v = strings.TrimPrefix(v, "_oauth2_proxy=")
+	if err == nil && v == "" {
+		err = errors.New("no cookie given")
+	}
+	return credential{Cookie: v}, err
+}
+
+func readAPIKey(o loginOptions, base string) (credential, error) {
+	v, err := readSecret(o, fmt.Sprintf("Create a key at %s/settings/apikeys, then paste it.\nAPI key: ", base))
+	if err == nil && !strings.HasPrefix(v, "sct_") {
+		err = errors.New("an API key starts with sct_")
+	}
+	return credential{APIKey: v}, err
+}
+
+// readSecret reads one line, prompting without echo on a terminal.
+func readSecret(o loginOptions, prompt string) (string, error) {
+	if o.secretPrompt {
+		fmt.Fprint(os.Stderr, prompt)
 		restore := noEcho()
 		defer func() { restore(); fmt.Fprintln(os.Stderr) }()
 	}
-	line, err := bufio.NewReader(o.cookieInput).ReadString('\n')
+	line, err := bufio.NewReader(o.secretInput).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return credential{}, err
+		return "", err
 	}
-	v := strings.TrimPrefix(strings.TrimSpace(line), "_oauth2_proxy=")
-	if v == "" {
-		return credential{}, errors.New("no cookie given")
-	}
-	return credential{Cookie: v}, nil
+	return strings.TrimSpace(line), nil
 }
 
 type oidcEndpoints struct {

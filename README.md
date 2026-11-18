@@ -21,7 +21,8 @@ nix profile install github:chadac-me/scooter-cli
 Each prints JSON and exits; flags may come anywhere.
 
 ```sh
-scooter login --server home --url https://scooter.example.org --cookie   # paste _oauth2_proxy
+scooter login --server home --url https://scooter.example.org --api-key  # paste a key from Settings → API keys
+scooter login --server home --url https://scooter.example.org --cookie   # or paste _oauth2_proxy
 scooter login --server work --url https://scooter.work.example \
   --issuer https://idp.work.example --client-id scooter                  # browser, OIDC + PKCE
 scooter servers                          # configured servers, and which are signed in
@@ -45,6 +46,12 @@ then `$SCOOTER_SERVER`, then the default (the first server you log in to, or
 `login --default`). OIDC ID tokens refresh on their own; when a login can't
 be refreshed, commands exit 3 and ask you to run `scooter login` again.
 
+An API key (Scooter's `apikeys` contrib) needs no auth proxy and doesn't expire
+with a browser session. It reaches only your own conversations. It can answer
+an agent's questions but not approvals, which stay in the web UI. A revoked or
+expired key exits 3 like any other refused login. `scooter tunnel` needs a
+cookie or OIDC login.
+
 ## `scooter acp`
 
 `scooter acp --server https://scooter.example.org` is an
@@ -52,7 +59,9 @@ be refreshed, commands exit 3 and ask you to run `scooter login` again.
 creates a Scooter conversation; `--conversation <id>` attaches the first one to
 an existing conversation instead. Auth headers come from
 `--headers-command` (or `--headers-file`), as a JSON object such as
-`{"Authorization": "Bearer …"}` or `{"Cookie": "_oauth2_proxy=…"}`. The command
+`{"Authorization": "Bearer …"}` or `{"Cookie": "_oauth2_proxy=…"}`. With an API
+key, point `--server` at `<url>/webhooks/agent-api/v1` and send it as the
+Bearer. The command
 is rerun once when the server's auth proxy rejects a request, with `{retry}`
 in it replaced by `t` (otherwise `nil`).
 
