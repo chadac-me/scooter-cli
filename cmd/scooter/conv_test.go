@@ -94,6 +94,29 @@ func TestStateFolding(t *testing.T) {
 		want   string
 	}{
 		{"user message not yet run", []string{`{"type":"TEXT_MESSAGE_START","messageId":"u","role":"user"}`}, stateRunning},
+		{"finished run with its prompt", []string{
+			`{"type":"RUN_STARTED"}`,
+			`{"type":"TEXT_MESSAGE_START","messageId":"u","role":"user"}`,
+			`{"type":"TEXT_MESSAGE_START","messageId":"a","role":"assistant"}`,
+			`{"type":"SYSTEM_MESSAGE","messageId":"s","source":"hook","text":"keep going"}`,
+			`{"type":"RUN_FINISHED"}`,
+		}, stateIdle},
+		{"errored run with its prompt", []string{
+			`{"type":"RUN_STARTED"}`,
+			`{"type":"TEXT_MESSAGE_START","messageId":"u","role":"user"}`,
+			`{"type":"RUN_ERROR","message":"boom"}`,
+		}, stateError},
+		{"running run with its prompt", []string{
+			`{"type":"RUN_STARTED"}`,
+			`{"type":"TEXT_MESSAGE_START","messageId":"u","role":"user"}`,
+		}, stateRunning},
+		{"queue drained", []string{
+			`{"type":"QUEUE_UPDATED","items":[{"text":"x"}]}`,
+			`{"type":"QUEUE_UPDATED","items":[]}`,
+			`{"type":"RUN_STARTED"}`,
+			`{"type":"TEXT_MESSAGE_START","messageId":"u","role":"user"}`,
+			`{"type":"RUN_FINISHED"}`,
+		}, stateIdle},
 		{"queued", []string{`{"type":"QUEUE_UPDATED","items":[{"text":"x"}]}`}, stateRunning},
 		{"run error", []string{`{"type":"RUN_STARTED"}`, `{"type":"RUN_ERROR","message":"boom"}`}, stateError},
 		{"answered approval", []string{

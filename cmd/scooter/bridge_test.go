@@ -243,11 +243,12 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Fatal("timed out")
 }
 
+// run emits a turn in agent-host's order: RUN_STARTED, then the prompt.
 func run(f *fakeScooter, text string, middle ...map[string]any) {
+	f.emit(map[string]any{"type": "RUN_STARTED", "threadId": "c1", "runId": "r1"})
 	f.emit(map[string]any{"type": "TEXT_MESSAGE_START", "messageId": "u1", "role": "user"})
 	f.emit(map[string]any{"type": "TEXT_MESSAGE_CONTENT", "messageId": "u1", "delta": text})
 	f.emit(map[string]any{"type": "TEXT_MESSAGE_END", "messageId": "u1"})
-	f.emit(map[string]any{"type": "RUN_STARTED", "threadId": "c1", "runId": "r1"})
 	for _, ev := range middle {
 		f.emit(ev)
 	}
