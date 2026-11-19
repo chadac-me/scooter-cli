@@ -63,7 +63,8 @@ func (s *convState) apply(raw json.RawMessage) {
 	case "TEXT_MESSAGE_START":
 		s.byID[ev.MessageID] = len(s.messages)
 		s.messages = append(s.messages, message{Role: ev.Role})
-		if ev.Role == "user" {
+		// agent-host logs a run's prompt after its RUN_STARTED.
+		if ev.Role == "user" && !s.running {
 			s.userPending = true
 		}
 	case "SYSTEM_MESSAGE":
