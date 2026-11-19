@@ -30,6 +30,8 @@ type fakeScooter struct {
 	cancels  chan struct{}
 	messages chan string
 	list     []map[string]any // GET /conversations
+	folders  []map[string]any // GET /folders
+	log      []string         // method and path of each request
 }
 
 func newFake(t *testing.T) (*fakeScooter, *httptest.Server) {
@@ -56,6 +58,9 @@ func (f *fakeScooter) emit(ev map[string]any) {
 }
 
 func (f *fakeScooter) serve(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.log = append(f.log, r.Method+" "+r.URL.Path)
+	f.mu.Unlock()
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	writeJSON := func(status int, v any) {
 		w.Header().Set("Content-Type", "application/json")
@@ -73,6 +78,10 @@ func (f *fakeScooter) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(201, map[string]any{"id": "c1"})
 	case r.Method == "GET" && r.URL.Path == "/conversations":
 		writeJSON(200, f.list)
+	case r.Method == "GET" && r.URL.Path == "/folders":
+		writeJSON(200, map[string]any{"folders": f.folders})
+	case r.Method == "PUT" && len(parts) == 3 && parts[2] == "folder":
+		w.WriteHeader(http.StatusNoContent)
 	case len(parts) == 3 && parts[2] == "suspend":
 		writeJSON(202, map[string]any{"ok": true})
 	case len(parts) == 2 && parts[0] == "conversations":

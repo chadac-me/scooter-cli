@@ -30,11 +30,18 @@ scooter login --server work --url https://scooter.work.example \
 scooter servers                          # configured servers, and which are signed in
 scooter ls [--active] [--all]            # your conversations, newest first
 scooter new [--project] [--wait] "Fix the flaky login test"
+scooter new --folder "Board/Design" "Add folder support to the CLI"  # straight onto a kanban stage
 scooter send [--wait] ID "Also update the changelog"
 scooter wait ID [--timeout 10m]          # until the turn ends or needs you
 scooter show ID [--last 5]               # state, pending requests, recent messages
 scooter cancel ID | scooter suspend ID | scooter url ID
+scooter folders                          # your folders, as id and path
+scooter mv ID "Board/Review" | scooter mv --unfile ID
 ```
+
+`--folder` and `mv` take a folder id or its path from `scooter folders`, such
+as `Board/Stage` for a kanban board's stage. `new` files the conversation
+before sending the prompt, so the agent knows its card from the first turn.
 
 `wait` (and `--wait`) report `state`: `idle` when the turn ended, `needs_user`
 when the agent waits on an approval or question (listed in `pending`; answer
