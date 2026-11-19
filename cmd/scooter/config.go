@@ -15,7 +15,7 @@ import (
 
 // serverAuth says how to sign in to a server.
 type serverAuth struct {
-	Kind     string   `json:"kind"` // "cookie", "oidc" or "" for none
+	Kind     string   `json:"kind"` // "cookie", "oidc", "apikey" or "" for none
 	Issuer   string   `json:"issuer,omitempty"`
 	ClientID string   `json:"clientId,omitempty"`
 	Scopes   []string `json:"scopes,omitempty"`
@@ -35,6 +35,7 @@ type config struct {
 // credential is one server's stored login.
 type credential struct {
 	Cookie       string `json:"cookie,omitempty"`
+	APIKey       string `json:"apiKey,omitempty"`
 	IDToken      string `json:"idToken,omitempty"`
 	RefreshToken string `json:"refreshToken,omitempty"`
 }
@@ -150,6 +151,17 @@ func (c config) resolve(flagValue string) (string, serverConfig, error) {
 	return "", serverConfig{}, fmt.Errorf("unknown server %q; run scooter login --server %s --url URL", want, want)
 }
 
+// apiKeyPath is where Scooter serves API-key callers.
+const apiKeyPath = "/webhooks/agent-api/v1"
+
+// base is the URL a server's commands go to.
+func (s serverConfig) base() string {
+	if s.Auth.Kind == "apikey" {
+		return s.URL + apiKeyPath
+	}
+	return s.URL
+}
+
 // loginHeaders returns a header source backed by the stored login.
 func loginHeaders(name string, s serverConfig) headerSource {
 	return headerSource{fn: func(ctx context.Context, retry bool) (map[string]string, error) {
@@ -173,6 +185,11 @@ func storedHeaders(ctx context.Context, name string, s serverConfig, retry bool)
 			return nil, relogin
 		}
 		return map[string]string{"Cookie": "_oauth2_proxy=" + cred.Cookie}, nil
+	case "apikey":
+		if cred.APIKey == "" || retry {
+			return nil, relogin
+		}
+		return map[string]string{"Authorization": "Bearer " + cred.APIKey}, nil
 	case "oidc":
 		if cred.IDToken == "" || retry || jwtExpiry(cred.IDToken).Before(time.Now().Add(time.Minute)) {
 			if cred.RefreshToken == "" {
