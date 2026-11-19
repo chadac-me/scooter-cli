@@ -22,8 +22,9 @@ type serverAuth struct {
 }
 
 type serverConfig struct {
-	URL  string     `json:"url"`
-	Auth serverAuth `json:"auth"`
+	URL         string     `json:"url"`                   // the web UI; links point here
+	WebhooksURL string     `json:"webhooksUrl,omitempty"` // the host serving /webhooks, if not URL
+	Auth        serverAuth `json:"auth"`
 }
 
 // config is ~/.config/scooter/config.json.
@@ -156,10 +157,13 @@ const apiKeyPath = "/webhooks/agent-api/v1"
 
 // base is the URL a server's commands go to.
 func (s serverConfig) base() string {
-	if s.Auth.Kind == "apikey" {
-		return s.URL + apiKeyPath
+	if s.Auth.Kind != "apikey" {
+		return s.URL
 	}
-	return s.URL
+	if s.WebhooksURL != "" {
+		return s.WebhooksURL + apiKeyPath
+	}
+	return s.URL + apiKeyPath
 }
 
 // loginHeaders returns a header source backed by the stored login.
@@ -177,7 +181,12 @@ func storedHeaders(ctx context.Context, name string, s serverConfig, retry bool)
 	if err != nil {
 		return nil, err
 	}
-	cred := creds[name]
+	return credHeaders(ctx, name, s, creds[name], retry)
+}
+
+// credHeaders returns one login's headers, refreshing an OIDC token.
+func credHeaders(ctx context.Context, name string, s serverConfig, cred credential, retry bool) (map[string]string, error) {
+	var err error
 	relogin := fmt.Errorf("%w: run scooter login --server %s", errAuthWall, name)
 	switch s.Auth.Kind {
 	case "cookie":

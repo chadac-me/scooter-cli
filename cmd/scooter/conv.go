@@ -301,7 +301,7 @@ func (f *follower) result(c *client) waitResult {
 	}
 }
 
-func chatURL(c *client, id string) string { return c.base + "/chat/" + url.PathEscape(id) }
+func chatURL(c *client, id string) string { return c.ui + "/chat/" + url.PathEscape(id) }
 
 // commandContext is cancelled by SIGINT or SIGTERM.
 func commandContext() (context.Context, context.CancelFunc) {
@@ -334,7 +334,9 @@ func openServer(flagValue string) *client {
 	if err != nil {
 		fatal(err)
 	}
-	return newClient(s.base(), loginHeaders(name, s))
+	c := newClient(s.base(), loginHeaders(name, s))
+	c.ui = s.URL
+	return c
 }
 
 // promptArg joins the arguments, or reads stdin for "-".

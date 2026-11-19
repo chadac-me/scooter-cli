@@ -186,7 +186,7 @@ func (a *agent) open(id string) *session {
 	}
 	s := newSession(id, a.c, a.out)
 	s.forms = a.forms
-	s.approveURL = a.c.base + "/chat/" + url.PathEscape(id)
+	s.approveURL = chatURL(a.c, id)
 	if a.opts.self {
 		s.approveURL = a.opts.approveURL
 		s.noAnswer = true

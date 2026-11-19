@@ -22,6 +22,8 @@ Each prints JSON and exits; flags may come anywhere.
 
 ```sh
 scooter login --server home --url https://scooter.example.org --api-key  # paste a key from Settings → API keys
+scooter login --server home --url https://scooter.example.org \
+  --webhooks-url https://scooter-webhooks.example.org --api-key          # /webhooks on its own host
 scooter login --server home --url https://scooter.example.org --cookie   # or paste _oauth2_proxy
 scooter login --server work --url https://scooter.work.example \
   --issuer https://idp.work.example --client-id scooter                  # browser, OIDC + PKCE
@@ -46,6 +48,13 @@ then `$SCOOTER_SERVER`, then the default (the first server you log in to, or
 `login --default`). OIDC ID tokens refresh on their own; when a login can't
 be refreshed, commands exit 3 and ask you to run `scooter login` again.
 
+`--url` is always the web UI's address, and the `url` links that `ls`, `show`,
+`new` and `wait` print point there. With `--api-key`, commands go to
+`/webhooks/agent-api/v1` on `--webhooks-url`, or on `--url` without it. Pass
+`--webhooks-url` when the web UI sits behind an auth proxy such as oauth2-proxy
+and `/webhooks` is served on its own host: the proxy would answer API calls to
+the web UI's host with a redirect to its sign-in page.
+
 An API key (Scooter's `apikeys` contrib) needs no auth proxy and doesn't expire
 with a browser session. It reaches only your own conversations. It can answer
 an agent's questions but not approvals, which stay in the web UI. A revoked or
@@ -60,8 +69,8 @@ creates a Scooter conversation; `--conversation <id>` attaches the first one to
 an existing conversation instead. Auth headers come from
 `--headers-command` (or `--headers-file`), as a JSON object such as
 `{"Authorization": "Bearer …"}` or `{"Cookie": "_oauth2_proxy=…"}`. With an API
-key, point `--server` at `<url>/webhooks/agent-api/v1` and send it as the
-Bearer. The command
+key, point `--server` at `/webhooks/agent-api/v1` on the host that serves
+`/webhooks` and send it as the Bearer. The command
 is rerun once when the server's auth proxy rejects a request, with `{retry}`
 in it replaced by `t` (otherwise `nil`).
 

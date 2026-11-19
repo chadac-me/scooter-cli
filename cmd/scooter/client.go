@@ -116,6 +116,7 @@ func lispBool(b bool) string {
 // client calls one Scooter server's HTTP API.
 type client struct {
 	base    string
+	ui      string // the web UI base, for links
 	http    *http.Client
 	source  headerSource
 	mu      sync.Mutex
@@ -124,8 +125,10 @@ type client struct {
 }
 
 func newClient(base string, source headerSource) *client {
+	base = strings.TrimRight(base, "/")
 	return &client{
-		base:   strings.TrimRight(base, "/"),
+		base:   base,
+		ui:     base,
 		source: source,
 		http: &http.Client{
 			// A redirect is the login page, never an API answer.

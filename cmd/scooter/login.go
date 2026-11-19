@@ -23,6 +23,7 @@ import (
 
 type loginOptions struct {
 	name, url    string
+	webhooksURL  string
 	auth         serverAuth
 	makeDefault  bool
 	noBrowser    bool
@@ -34,17 +35,19 @@ type loginOptions struct {
 func loginMain(args []string) {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, `usage: scooter login [--server NAME] [--url URL --api-key | --url URL --cookie | --url URL --issuer URL --client-id ID]
+		fmt.Fprintln(os.Stderr, `usage: scooter login [--server NAME] [--url URL [--webhooks-url URL] --api-key | --url URL --cookie | --url URL --issuer URL --client-id ID]
 
 Signs in and stores the login under ~/.config/scooter. A new server needs
---url and an auth kind: --api-key pastes a key from Settings → API keys;
+--url, the web UI's base URL, and an auth kind: --api-key pastes a key from
+Settings → API keys and calls --webhooks-url when /webhooks has its own host;
 --cookie pastes oauth2-proxy's _oauth2_proxy cookie (either is read from
 stdin when it isn't a terminal); --issuer and --client-id log in with OIDC
 (PKCE) in a browser.`)
 		fs.PrintDefaults()
 	}
 	server := fs.String("server", "", "server name (default: the default server)")
-	rawURL := fs.String("url", "", "server base URL, to add or change a server")
+	rawURL := fs.String("url", "", "web UI base URL, to add or change a server")
+	webhooksURL := fs.String("webhooks-url", "", "base URL of the host serving /webhooks, for --api-key (default: --url)")
 	apiKey := fs.Bool("api-key", false, "sign in with a pasted API key")
 	cookie := fs.Bool("cookie", false, "sign in with a pasted _oauth2_proxy cookie")
 	issuer := fs.String("issuer", "", "OIDC issuer URL")
@@ -55,7 +58,7 @@ stdin when it isn't a terminal); --issuer and --client-id log in with OIDC
 	_ = fs.Parse(args) // ExitOnError: it exits rather than returning one.
 
 	opts := loginOptions{
-		name: *server, url: *rawURL, makeDefault: *makeDefault, noBrowser: *noBrowser,
+		name: *server, url: *rawURL, webhooksURL: *webhooksURL, makeDefault: *makeDefault, noBrowser: *noBrowser,
 		timeout: 5 * time.Minute, secretInput: os.Stdin, secretPrompt: isTerminal(os.Stdin),
 	}
 	switch {
@@ -91,6 +94,9 @@ func login(ctx context.Context, o loginOptions) (map[string]any, error) {
 	if o.url != "" {
 		s.URL = strings.TrimRight(o.url, "/")
 	}
+	if o.webhooksURL != "" {
+		s.WebhooksURL = strings.TrimRight(o.webhooksURL, "/")
+	}
 	if o.auth.Kind != "" {
 		s.Auth = o.auth
 	}
@@ -116,8 +122,15 @@ func login(ctx context.Context, o loginOptions) (map[string]any, error) {
 		return nil, err
 	}
 
-	// Save the server only once a login worked.
-	if !known || o.url != "" || o.auth.Kind != "" || o.makeDefault || cfg.Default == "" {
+	// Check first, so only a login that worked is stored.
+	check := headerSource{fn: func(ctx context.Context, retry bool) (map[string]string, error) {
+		return credHeaders(ctx, name, s, cred, retry)
+	}}
+	var who json.RawMessage
+	if err := newClient(s.base(), check).call(ctx, "GET", "/whoami", nil, &who); err != nil {
+		return nil, fmt.Errorf("the server refused the login: %w", err)
+	}
+	if !known || o.url != "" || o.webhooksURL != "" || o.auth.Kind != "" || o.makeDefault || cfg.Default == "" {
 		cfg.Servers[name] = s
 		if o.makeDefault || cfg.Default == "" {
 			cfg.Default = name
@@ -128,10 +141,6 @@ func login(ctx context.Context, o loginOptions) (map[string]any, error) {
 	}
 	if err := saveCredential(name, cred); err != nil {
 		return nil, err
-	}
-	var who json.RawMessage
-	if err := newClient(s.base(), loginHeaders(name, s)).call(ctx, "GET", "/whoami", nil, &who); err != nil {
-		return nil, fmt.Errorf("signed in, but the server refused the login: %w", err)
 	}
 	return map[string]any{"server": name, "url": s.URL, "user": who}, nil
 }

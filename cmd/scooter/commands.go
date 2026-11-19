@@ -83,16 +83,25 @@ func serversMain(args []string) {
 	if err != nil {
 		fatal(err)
 	}
+	printJSON(serverList(cfg, creds))
+}
+
+// serverList is what scooter servers prints.
+func serverList(cfg config, creds map[string]credential) []map[string]any {
 	out := []map[string]any{}
 	for _, n := range cfg.serverNames() {
 		s := cfg.Servers[n]
 		c := creds[n]
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"name": n, "url": s.URL, "auth": s.Auth.Kind, "default": n == cfg.Default,
-			"signed_in": s.Auth.Kind == "" || c.Cookie != "" || c.IDToken != "" || c.RefreshToken != "",
-		})
+			"signed_in": s.Auth.Kind == "" || c.Cookie != "" || c.APIKey != "" || c.IDToken != "" || c.RefreshToken != "",
+		}
+		if s.WebhooksURL != "" {
+			row["webhooks_url"] = s.WebhooksURL
+		}
+		out = append(out, row)
 	}
-	printJSON(out)
+	return out
 }
 
 func lsMain(args []string) {
