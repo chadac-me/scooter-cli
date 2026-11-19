@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -22,19 +23,21 @@ func init() {
 		"login":   {"[--server NAME] [--url URL] [--cookie | --issuer URL --client-id ID] [--default]", loginMain},
 		"servers": {"", serversMain},
 		"ls":      {"[--server NAME] [--all] [--active] [--limit N]", lsMain},
-		"new":     {"[--server NAME] [--model M] [--title T] [--private] [--project] [--wait] PROMPT|-", newMain},
+		"new":     {"[--server NAME] [--model M] [--title T] [--private] [--folder ID|PATH] [--project] [--wait] PROMPT|-", newMain},
 		"send":    {"[--server NAME] [--wait] ID PROMPT|-", sendMain},
 		"wait":    {"[--server NAME] [--timeout 10m] ID", waitMain},
 		"show":    {"[--server NAME] [--last N] ID", showMain},
 		"cancel":  {"[--server NAME] ID", func(a []string) { postMain("cancel", a) }},
 		"suspend": {"[--server NAME] ID", func(a []string) { postMain("suspend", a) }},
 		"url":     {"[--server NAME] ID", urlMain},
+		"folders": {"[--server NAME]", foldersMain},
+		"mv":      {"[--server NAME] ID FOLDER | --unfile ID", mvMain},
 	}
 }
 
 func oneShotUsage() string {
 	var b strings.Builder
-	for _, name := range []string{"login", "servers", "ls", "new", "send", "wait", "show", "cancel", "suspend", "url"} {
+	for _, name := range []string{"login", "servers", "ls", "new", "send", "wait", "show", "cancel", "suspend", "url", "folders", "mv"} {
 		fmt.Fprintf(&b, "       scooter %s %s\n", name, oneShots[name].usage)
 	}
 	return b.String()
@@ -124,6 +127,7 @@ func newMain(args []string) {
 	model := fs.String("model", "", "model (default: the server's)")
 	title := fs.String("title", "", "conversation title (default: the agent picks one)")
 	private := fs.Bool("private", false, "make the conversation private to you")
+	folder := fs.String("folder", "", "file it in this folder: an id or a path such as Board/Stage")
 	project := fs.Bool("project", false, "ask the agent to clone the working directory's git remote and branch")
 	wait := fs.Bool("wait", false, "wait for the first turn to end, as scooter wait does")
 	timeout := fs.Duration("timeout", 10*time.Minute, "with --wait, give up after this long (0 for never)")
@@ -150,17 +154,77 @@ func newMain(args []string) {
 	if *private {
 		body["visibility"] = "private"
 	}
+	folderID := ""
+	if *folder != "" {
+		if folderID, err = findFolder(ctx, c, *folder); err != nil {
+			fatal(err)
+		}
+	}
+	out, err := startConversation(ctx, c, body, folderID, text, *wait, *timeout)
+	if err != nil {
+		fatal(err)
+	}
+	printJSON(out)
+}
+
+// startConversation creates, files, then prompts, so hooks see the folder from the start.
+func startConversation(ctx context.Context, c *client, body map[string]any, folderID, text string, wait bool, timeout time.Duration) (any, error) {
 	var conv struct {
 		ID string `json:"id"`
 	}
 	if err := c.call(ctx, "POST", "/conversations", body, &conv); err != nil {
+		return nil, err
+	}
+	if folderID != "" {
+		if err := fileConversation(ctx, c, conv.ID, folderID); err != nil {
+			return nil, fmt.Errorf("created %s, but could not file it: %w", conv.ID, err)
+		}
+	}
+	out, err := sendMessage(ctx, c, conv.ID, text, wait, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("created %s, but: %w", conv.ID, err)
+	}
+	return out, nil
+}
+
+func foldersMain(args []string) {
+	fs, server := newFlags("folders")
+	parseArgs(fs, args, 0)
+	ctx, stop := commandContext()
+	defer stop()
+	out, err := listFolders(ctx, openServer(*server))
+	if err != nil {
 		fatal(err)
 	}
-	out, err := sendMessage(ctx, c, conv.ID, text, *wait, *timeout)
-	if err != nil {
-		fatal(fmt.Errorf("created %s, but: %w", conv.ID, err))
-	}
 	printJSON(out)
+}
+
+func mvMain(args []string) {
+	fs, server := newFlags("mv")
+	unfile := fs.Bool("unfile", false, "take the conversation out of its folder")
+	rest := parseArgs(fs, args, 1)
+	want := 2
+	if *unfile {
+		want = 1
+	}
+	if len(rest) != want {
+		fs.Usage()
+		os.Exit(2)
+	}
+	ctx, stop := commandContext()
+	defer stop()
+	c := openServer(*server)
+	folderID := ""
+	if !*unfile {
+		var err error
+		if folderID, err = findFolder(ctx, c, rest[1]); err != nil {
+			fatal(err)
+		}
+	}
+	if err := fileConversation(ctx, c, rest[0], folderID); err != nil {
+		fatal(err)
+	}
+	printJSON(map[string]any{"id": rest[0], "folder": folderID, "url": chatURL(c, rest[0])})
 }
 
 func sendMain(args []string) {
