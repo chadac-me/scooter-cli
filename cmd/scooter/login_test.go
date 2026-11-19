@@ -242,3 +242,49 @@ func TestRefusedAPIKeyAsksForLogin(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestAPIKeyLoginWithAWebhooksHost(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("SCOOTER_SERVER", "")
+	srv := scooterRequiring(t, "Authorization", "Bearer sct_k")
+	out, err := login(context.Background(), loginOptions{
+		name: "home", url: "https://ui.example/", webhooksURL: srv.URL + "/", auth: serverAuth{Kind: "apikey"},
+		secretInput: strings.NewReader("sct_k\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["url"] != "https://ui.example" {
+		t.Fatalf("got %v", out)
+	}
+	c := openServer("")
+	if c.base != srv.URL+apiKeyPath {
+		t.Fatalf("base %s", c.base)
+	}
+	if got := chatURL(c, "c1"); got != "https://ui.example/chat/c1" {
+		t.Fatalf("link %s", got)
+	}
+	cfg, _ := loadConfig()
+	creds, _ := loadCredentials()
+	rows := serverList(cfg, creds)
+	if len(rows) != 1 || rows[0]["signed_in"] != true || rows[0]["webhooks_url"] != srv.URL {
+		t.Fatalf("servers %v", rows)
+	}
+}
+
+func TestRefusedLoginStoresNothing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	srv := scooterRequiring(t, "Authorization", "Bearer sct_good")
+	_, err := login(context.Background(), loginOptions{
+		name: "home", url: srv.URL, auth: serverAuth{Kind: "apikey"},
+		secretInput: strings.NewReader("sct_bad\n"),
+	})
+	if err == nil {
+		t.Fatal("a refused key logged in")
+	}
+	cfg, _ := loadConfig()
+	creds, _ := loadCredentials()
+	if len(cfg.Servers) != 0 || len(creds) != 0 || len(serverList(cfg, creds)) != 0 {
+		t.Fatalf("config %+v, credentials %+v", cfg, creds)
+	}
+}
