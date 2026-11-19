@@ -36,20 +36,17 @@ func listFolders(ctx context.Context, c *client) ([]folderEntry, error) {
 		children[f.ParentID] = append(children[f.ParentID], f)
 	}
 	out := []folderEntry{}
-	var walk func(parent, prefix string, depth int)
-	walk = func(parent, prefix string, depth int) {
+	var walk func(parent, prefix string)
+	walk = func(parent, prefix string) {
 		kids := children[parent]
 		sort.SliceStable(kids, func(i, j int) bool { return kids[i].Position < kids[j].Position })
 		for _, f := range kids {
 			path := prefix + f.Name
 			out = append(out, folderEntry{ID: f.ID, Path: path, Kind: f.Kind})
-			// The router caps nesting; the bound only guards a malformed cycle.
-			if depth < 16 {
-				walk(f.ID, path+"/", depth+1)
-			}
+			walk(f.ID, path+"/")
 		}
 	}
-	walk("", "", 0)
+	walk("", "")
 	return out, nil
 }
 
